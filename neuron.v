@@ -18,9 +18,8 @@ module neuron #(
     reg signed [31:0] accumulator;
     reg [31:0] count;
     wire signed [31:0] product;
-    reg signed [31:0] final_sum; 
+    reg signed [31:0] final_sum;
 
-    // Q1.15 * Q1.15 = Q2.30 result
     assign product = $signed(data_in) * $signed(weight_in);
 
     always @(posedge clk) begin
@@ -29,38 +28,32 @@ module neuron #(
             count <= 0;
             out_valid <= 0;
             data_out <= 0;
-        end else begin
-            if (input_valid) begin
-                // Monitor first neuron of any layer to avoid console spam
-                if (count == 0) begin
-                    $display("[%t] NEURON DEBUG: Starting accumulation for New Layer/Input Set", $time);
-                end
-
-                if (count < NUM_INPUTS - 1) begin
-                    accumulator <= accumulator + product;
-                    count <= count + 1;
-                    out_valid <= 0;
-                end else begin
-                    // Final input received: Calculate sum including current product
-                    final_sum = accumulator + product + ($signed(bias_in) << 15);
-                    
-                    // ReLU Activation
-                    if (final_sum > 0)
-                        data_out <= final_sum[30:15];
-                    else
-                        data_out <= 0;
-                    
-                    // Detailed output for debugging layer completion
-                    $display("[%t] NEURON DEBUG: Finished %0d inputs. Result: %h, Valid Pulse: 1", $time, NUM_INPUTS, final_sum[30:15]);
-                    
-                    out_valid <= 1;
-                    count <= 0;
-                    accumulator <= 0;
-                end
-            end else begin
-                // Ensure out_valid is only high for one cycle
+        end else if (input_valid) begin
+            if (count < NUM_INPUTS - 1) begin
+                accumulator <= accumulator + product;
+                count <= count + 1;
                 out_valid <= 0;
+            end else begin
+                // Calculate final sum including bias
+                final_sum = accumulator + product + ($signed(bias_in) << 15);
+                
+                // --- THE FIX: RELU + SATURATION ---
+                if (final_sum <= 0) begin
+                    data_out <= 0; // ReLU
+                end else if (final_sum[31:30] != 2'b00) begin
+                    // Overflow occurred (value > 1.0)
+                    data_out <= 16'h7FFF; // Saturate to max positive Q1.15
+                end else begin
+                    data_out <= final_sum[30:15]; // Normal positive value
+                end
+                
+                $display("[%0t] NEURON DEBUG: Finished %0d inputs. Result: %h", $time, NUM_INPUTS, data_out);
+                out_valid <= 1;
+                count <= 0;
+                accumulator <= 0;
             end
+        end else begin
+            out_valid <= 0;
         end
     end
 endmodule
