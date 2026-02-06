@@ -26,7 +26,9 @@ module global_controller (
         if (rst) begin
             state <= IDLE;
             current_addr <= 0;
-            l1_run <= 0; l2_run <= 0; l3_run <= 0;
+            l1_run <= 0; 
+            l2_run <= 0; 
+            l3_run <= 0;
             network_ready <= 0;
         end else begin
             case (state)
@@ -39,21 +41,24 @@ module global_controller (
                 end
 
                 LAYER1: begin
-                    l1_run <= 1; // KEEP THIS HIGH 
-                    if (current_addr < 783) 
+                    l1_run <= 1;
+                    if (current_addr < 783) begin
                         current_addr <= current_addr + 1;
+                    end 
                     
-                    if (l1_done) begin // Wait for the neuron pulse
+                    // Transition only when the neuron signals it has finished all 784 inputs
+                    if (l1_done) begin
                         state <= LAYER2;
                         current_addr <= 0;
-                        l1_run <= 0; // NOW turn it off
+                        l1_run <= 0;
                     end
                 end
 
                 LAYER2: begin
-                    l2_run <= 1; // KEEP THIS HIGH 
-                    if (current_addr < 127) 
+                    l2_run <= 1;
+                    if (current_addr < 127) begin
                         current_addr <= current_addr + 1;
+                    end
                     
                     if (l2_done) begin
                         state <= LAYER3;
@@ -63,9 +68,10 @@ module global_controller (
                 end
 
                 LAYER3: begin
-                    l3_run <= 1; // KEEP THIS HIGH 
-                    if (current_addr < 31) 
+                    l3_run <= 1;
+                    if (current_addr < 31) begin
                         current_addr <= current_addr + 1;
+                    end
                     
                     if (l3_done) begin
                         state <= DONE;
