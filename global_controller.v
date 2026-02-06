@@ -26,15 +26,14 @@ module global_controller (
         if (rst) begin
             state <= IDLE;
             current_addr <= 0;
-            l1_run <= 0; 
-            l2_run <= 0; 
-            l3_run <= 0;
+            l1_run <= 0; l2_run <= 0; l3_run <= 0;
             network_ready <= 0;
         end else begin
             case (state)
                 IDLE: begin
                     network_ready <= 0;
                     if (start_network) begin
+                        $display("[%0t] CTRL: >>> Starting LAYER 1 (784 Inputs) <<<", $time);
                         state <= LAYER1;
                         current_addr <= 0;
                     end
@@ -42,12 +41,14 @@ module global_controller (
 
                 LAYER1: begin
                     l1_run <= 1;
-                    if (current_addr < 783) begin
+                    if (current_addr < 783) 
                         current_addr <= current_addr + 1;
-                    end 
                     
-                    // Transition only when the neuron signals it has finished all 784 inputs
+                    if (current_addr % 200 == 0)
+                        $display("[%0t] CTRL: Layer 1 processing... Address: %0d", $time, current_addr);
+
                     if (l1_done) begin
+                        $display("[%0t] CTRL: Layer 1 DONE. Switching to LAYER 2", $time);
                         state <= LAYER2;
                         current_addr <= 0;
                         l1_run <= 0;
@@ -56,11 +57,14 @@ module global_controller (
 
                 LAYER2: begin
                     l2_run <= 1;
-                    if (current_addr < 127) begin
+                    if (current_addr < 127) 
                         current_addr <= current_addr + 1;
-                    end
+
+                    if (current_addr % 40 == 0)
+                        $display("[%0t] CTRL: Layer 2 processing... Address: %0d", $time, current_addr);
                     
                     if (l2_done) begin
+                        $display("[%0t] CTRL: Layer 2 DONE. Switching to LAYER 3", $time);
                         state <= LAYER3;
                         current_addr <= 0;
                         l2_run <= 0;
@@ -69,11 +73,11 @@ module global_controller (
 
                 LAYER3: begin
                     l3_run <= 1;
-                    if (current_addr < 31) begin
+                    if (current_addr < 31) 
                         current_addr <= current_addr + 1;
-                    end
                     
                     if (l3_done) begin
+                        $display("[%0t] CTRL: Layer 3 DONE. Finalizing...", $time);
                         state <= DONE;
                         current_addr <= 0;
                         l3_run <= 0;
@@ -81,6 +85,7 @@ module global_controller (
                 end
 
                 DONE: begin
+                    $display("[%0t] CTRL: >>> Network Inference Complete <<<", $time);
                     network_ready <= 1;
                     state <= IDLE;
                 end

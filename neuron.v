@@ -18,10 +18,9 @@ module neuron #(
     reg signed [31:0] accumulator;
     reg [31:0] count;
     wire signed [31:0] product;
-    
-    // --- THE FIX: Declare the missing variable ---
     reg signed [31:0] final_sum; 
 
+    // Q1.15 * Q1.15 = Q2.30 result
     assign product = $signed(data_in) * $signed(weight_in);
 
     always @(posedge clk) begin
@@ -32,6 +31,11 @@ module neuron #(
             data_out <= 0;
         end else begin
             if (input_valid) begin
+                // Monitor first neuron of any layer to avoid console spam
+                if (count == 0) begin
+                    $display("[%t] NEURON DEBUG: Starting accumulation for New Layer/Input Set", $time);
+                end
+
                 if (count < NUM_INPUTS - 1) begin
                     accumulator <= accumulator + product;
                     count <= count + 1;
@@ -46,12 +50,15 @@ module neuron #(
                     else
                         data_out <= 0;
                     
-                    out_valid <= 1; // Pulse high to signal layer completion
-                    count <= 0;     // Reset for next layer/image
+                    // Detailed output for debugging layer completion
+                    $display("[%t] NEURON DEBUG: Finished %0d inputs. Result: %h, Valid Pulse: 1", $time, NUM_INPUTS, final_sum[30:15]);
+                    
+                    out_valid <= 1;
+                    count <= 0;
                     accumulator <= 0;
                 end
             end else begin
-                // Ensure out_valid is only high for one cycle 
+                // Ensure out_valid is only high for one cycle
                 out_valid <= 0;
             end
         end
