@@ -13,7 +13,6 @@ module mnist_tb;
         .final_prediction(final_prediction), .done(done)
     );
 
-    // 100MHz Clock
     always #5 clk = ~clk;
 
     initial begin
@@ -31,11 +30,15 @@ module mnist_tb;
         rst = 0;
         $display("[%0t] TB: Global Reset released.", $time);
 
-        repeat(2) @(posedge clk);
+        repeat(5) @(posedge clk);
+        
+        // --- WIDER START PULSE ---
+        $display("[%0t] TB: Asserting Start Signal...", $time);
         start = 1;
-        @(posedge clk);
+        @(posedge clk); // Hold for cycle 1
+        @(posedge clk); // Hold for cycle 2
         start = 0;
-        $display("[%0t] TB: Start Network trigger pulsed.", $time);
+        $display("[%0t] TB: Start Signal Released.", $time);
 
         fork
             begin
@@ -46,19 +49,18 @@ module mnist_tb;
                 $display("--------------------------------------");
             end
             
-            // Named block to provide continuous simulation feedback
             begin : heartbeat_monitor
                 forever begin
-                    #1000000; // Log every 1ms of simulation time
+                    #1000000; 
                     if (!done)
-                        $display("[%0t] TB: Simulation ongoing... (Waiting for Layers to finish)", $time);
+                        $display("[%0t] TB: Simulation ongoing... (Waiting for Layers)", $time);
                     else
                         disable heartbeat_monitor;
                 end
             end
 
             begin
-                #100000000; // 100ms Timeout
+                #20000000; // 20ms Timeout
                 $display("[%0t] FATAL ERROR: Simulation Timed Out!", $time);
                 $finish;
             end
