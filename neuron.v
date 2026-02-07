@@ -14,7 +14,6 @@ module neuron #(
     output reg out_valid
 );
 
-    // 48-bit prevents overflow for 784 Q30 products
     reg signed [47:0] accumulator;
     reg [31:0] count;
     wire signed [31:0] product;
@@ -24,28 +23,32 @@ module neuron #(
 
     always @(posedge clk) begin
         if (rst) begin
-            $display("[%0t] Neuron Reset",$time);
             accumulator <= 0; count <= 0; out_valid <= 0; data_out <= 0;
         end else if (input_valid) begin
             if (count < NUM_INPUTS - 1) begin
                 accumulator <= accumulator + $signed(product);
                 count <= count + 1;
                 out_valid <= 0;
-                $display("[%0t] Neuron (count<NUM_INPUT-1) : Accumulator : %b",$time,accumulator);
+                
+                // --- DEBUG: Track every 100th accumulation step ---
+                if (count % 100 == 0)
+                    $display("[%0t] NEURON DEBUG: Step %0d | In: %h | W: %h | Product: %h | Acc: %h", 
+                             $time, count, data_in, weight_in, product, accumulator);
+
             end else begin
-                // Align Q1.15 bias with Q30 fraction
                 final_sum = accumulator + $signed(product) + {{17{bias_in[15]}}, bias_in, 15'b0};
-                $display("[%0t] Neuron (else) : Final Sum : %b",$time,final_sum);
-            
-                // ReLU + Saturation (Clamping)
+                
                 if (final_sum[47]) begin
-                    data_out <= 16'h0000; // ReLU
+                    data_out <= 16'h0000;
+                    $display("[%0t] NEURON FINISH: Result Negative (%h) -> ReLU forced to 0000", $time, final_sum);
                 end else if (|final_sum[46:30]) begin 
-                    data_out <= 16'h7FFF; // Saturate if value >= 1.0
+                    data_out <= 16'h7FFF; 
+                    $display("[%0t] NEURON FINISH: Result Overflow (%h) -> Saturated to 7FFF", $time, final_sum);
                 end else begin
-                    data_out <= {1'b0, final_sum[29:15]}; // Extract Q1.15 fraction
+                    data_out <= {1'b0, final_sum[29:15]};
+                    $display("[%0t] NEURON FINISH: Success | Final Sum: %h | Output: %h", $time, final_sum, data_out);
                 end
-                $display("[%0t] Neuron (else) : Data Out : %b",$time,data_out);
+                
                 out_valid <= 1;
                 count <= 0; accumulator <= 0;
             end

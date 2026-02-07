@@ -23,7 +23,7 @@ module nn_layer #(
             wire [DATA_WIDTH-1:0] b_wire;
             wire [DATA_WIDTH-1:0] n_out;
 
-            // 1. Instance Weight Memory for this specific neuron
+            // 1. Instance Weight Memory for this specific neuron [cite: 58-59]
             Weight_Memory #(
                 .NEURON_ID(i),
                 .NUM_NEURONS(NUM_NEURONS),
@@ -35,17 +35,17 @@ module nn_layer #(
                 .weight_out(w_wire)
             );
 
-            // 2. Instance Bias Memory for this specific neuron
+            // 2. Instance Bias Memory for this specific neuron [cite: 60-61]
             Bias_Memory #(
-                .NEURON_ID(i),           // Now this matches the parameter in bm
+                .NEURON_ID(i),
                 .NUM_NEURONS(NUM_NEURONS),
                 .BIAS_FILE(BIAS_FILE)
             ) bm (
                 .clk(clk),
-                .bias_out(b_wire)        // NEURON_ID port removed from here
+                .bias_out(b_wire)
             );
 
-            // 3. Instance the Neuron itself
+            // 3. Instance the Neuron itself [cite: 62-64]
             neuron #(
                 .IN_WIDTH(DATA_WIDTH),
                 .OUT_WIDTH(DATA_WIDTH),
@@ -61,15 +61,17 @@ module nn_layer #(
                 .out_valid(out_valids[i])
             );
 
-            // 4. Pack the 16-bit output into the wide layer bus
+            // 4. Pack the 16-bit output into the wide layer bus [cite: 65]
             assign layer_out[i*DATA_WIDTH +: DATA_WIDTH] = n_out;
+
+            // --- DEBUG: Procedural block to track neuron activity ---
             always @(posedge clk) begin
-                // Only print when the layer is actively processing input
-                if (input_valid) begin
-                    $display("[%0t] [Neuron %d] n_out=%b, weight_in=%b, bias_in=%d", 
-                             $time, i, n_out, w_wire, b_wire);
+                if (out_valids[i]) begin
+                    $display("[%0t] LAYER DEBUG: Neuron %0d finished. Output: %h", 
+                             $time, i, n_out);
                 end
             end
         end
     endgenerate
+
 endmodule

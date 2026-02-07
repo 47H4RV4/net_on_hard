@@ -24,19 +24,13 @@ module global_controller (
 
     always @(posedge clk) begin
         if (rst) begin
-            state <= IDLE;
-            current_addr <= 0;
+            state <= IDLE; current_addr <= 0;
             l1_run <= 0; l2_run <= 0; l3_run <= 0;
             network_ready <= 0;
         end else begin
             case (state)
                 IDLE: begin
                     network_ready <= 0;
-                    
-                    // DEBUG: Print status every 1000 cycles if stuck in IDLE
-                    if ($time % 10000 == 0) 
-                        $display("[%0t] CTRL: IDLE State. Waiting for start_network=1 (Current: %b)", $time, start_network);
-
                     if (start_network) begin
                         $display("[%0t] CTRL: >>> START SIGNAL RECEIVED <<<", $time);
                         state <= LAYER1;
@@ -46,43 +40,34 @@ module global_controller (
 
                 LAYER1: begin
                     l1_run <= 1;
-                    if (current_addr < 783) 
-                        current_addr <= current_addr + 1;
-                        $display("[%0t] CTRL: Layer 1 Processing Pixel %0d", $time, current_addr);
+                    if (current_addr < 783) current_addr <= current_addr + 1;
+                    $display("[%0t] CTRL: Layer 1 Processing Pixel %0d", $time, current_addr);
 
                     if (l1_done) begin
                         $display("[%0t] CTRL: Layer 1 DONE -> Switching to Layer 2", $time);
-                        state <= LAYER2;
-                        current_addr <= 0;
-                        l1_run <= 0;
+                        state <= LAYER2; current_addr <= 0; l1_run <= 0;
                     end
                 end
 
                 LAYER2: begin
                     l2_run <= 1;
-                    if (current_addr < 127) 
-                        current_addr <= current_addr + 1;
-                        $display("[%0t] CTRL: Layer 2 Processing Neuron %0d", $time, current_addr);
+                    if (current_addr < 127) current_addr <= current_addr + 1;
+                    $display("[%0t] CTRL: Layer 2 Processing Pixel %0d", $time, current_addr);
 
                     if (l2_done) begin
                         $display("[%0t] CTRL: Layer 2 DONE -> Switching to Layer 3", $time);
-                        state <= LAYER3;
-                        current_addr <= 0;
-                        l2_run <= 0;
+                        state <= LAYER3; current_addr <= 0; l2_run <= 0;
                     end
                 end
 
                 LAYER3: begin
                     l3_run <= 1;
-                    if (current_addr < 31) 
-                        current_addr <= current_addr + 1;
-                        $display("[%0t] CTRL: Layer 3 Processing Neuron %0d", $time, current_addr);
-
+                    if (current_addr < 31) current_addr <= current_addr + 1;
+                    $display("[%0t] CTRL: Layer 3 Processing Pixel %0d", $time, current_addr);
+                    
                     if (l3_done) begin
                         $display("[%0t] CTRL: Layer 3 DONE -> Inference Complete", $time);
-                        state <= DONE;
-                        current_addr <= 0;
-                        l3_run <= 0;
+                        state <= DONE; current_addr <= 0; l3_run <= 0;
                     end
                 end
 
@@ -96,5 +81,3 @@ module global_controller (
         end
     end
 endmodule
-
-//check
