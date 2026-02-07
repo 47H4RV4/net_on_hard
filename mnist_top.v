@@ -8,6 +8,7 @@ module mnist_top (
     output done
 );
 
+    // --- 1. Signal Declarations ---
     wire [31:0] internal_addr; 
     wire l1_run, l2_run, l3_run;
     wire [127:0] l1_valids;
@@ -20,20 +21,19 @@ module mnist_top (
     wire [10*16-1:0] sm_bus;
     wire sm_done;
     
-    // Handshake signals for final output stability
+    // NEW: Consistent handshake naming and search control
     reg prediction_done;
     reg search_active;
 
+    // --- 2. Global Controller ---
     global_controller ctrl (
         .clk(clk), .rst(rst), .start_network(start),
-        .l1_done(l1_valids[0]), 
-        .l2_done(l2_valids[0]), 
-        .l3_done(l3_valids[0]),
-        .current_addr(internal_addr), 
-        .l1_run(l1_run), .l2_run(l2_run), .l3_run(l3_run),
+        .l1_done(l1_valids[0]), .l2_done(l2_valids[0]), .l3_done(l3_valids[0]),
+        .current_addr(internal_addr), .l1_run(l1_run), .l2_run(l2_run), .l3_run(l3_run),
         .network_ready() 
     );
 
+    // --- 3. Memory & Layers ---
     image_rom img (.clk(clk), .addr(internal_addr[9:0]), .q(rom_pixel));
 
     nn_layer #(.NUM_INPUTS(784), .NUM_NEURONS(128), 
@@ -56,9 +56,11 @@ module mnist_top (
         .local_addr(internal_addr), .out_valids(l3_valids), .layer_out(l3_bus)
     );
 
+    // --- 4. Softmax Unit ---
     softmax_unit sm (.clk(clk), .rst(rst), .neuron_outputs(l3_bus), 
                     .in_valid(l3_valids[0]), .softmax_out(sm_bus), .out_valid(sm_done));
 
+    // --- 5. Argmax Logic ---
     integer k;
     reg [15:0] max_val;
     
@@ -69,11 +71,11 @@ module mnist_top (
             prediction_done <= 0;
             search_active <= 0;
         end else if (sm_done) begin
-            search_active <= 1; // Start search search cycle
+            search_active <= 1; // Pulse to begin search cycle
         end else if (search_active) begin
             max_val = 0;
             for (k = 0; k < 10; k = k + 1) begin
-                // Compare probabilities as unsigned magnitudes
+                // Use unsigned comparison: probabilities (MSB=1) are the largest
                 if (sm_bus[k*16 +: 16] > max_val) begin
                     max_val = sm_bus[k*16 +: 16];
                     final_prediction <= k;
@@ -86,6 +88,7 @@ module mnist_top (
         end
     end
 
+    // Correctly wait for the search loop to finish before signaling testbench [cite: 159, 233]
     assign done = prediction_done;
 
 endmodule

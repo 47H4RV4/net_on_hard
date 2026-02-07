@@ -15,13 +15,13 @@ module neuron #(
     output reg out_valid
 );
 
-    // 48-bit accumulator prevents overflow for 784 Q2.30 products
+    // 48-bit wide to prevent overflow during summation of 784 Q2.30 products
     reg signed [47:0] accumulator;
     reg [31:0] count;
     wire signed [31:0] product;
     reg signed [47:0] final_sum;
 
-    // Q1.15 * Q1.15 = Q2.30 result
+    // Q1.15 * Q1.15 = Q2.30 result (32 bits)
     assign product = $signed(data_in) * $signed(weight_in);
 
     always @(posedge clk) begin
@@ -36,19 +36,20 @@ module neuron #(
                 count <= count + 1;
                 out_valid <= 0;
             end else begin
-                // Align Q1.15 bias with Q30 sum of products by shifting left 15 bits
+                // Bias Alignment: Shift Q1.15 bias left by 15 bits to align binary point with Q2.30
                 final_sum = accumulator + $signed(product) + {{17{bias_in[15]}}, bias_in, 15'b0};
                 
-                // ReLU + Saturation Logic to prevent wrap-around
+                // ReLU + Saturation Logic
                 if (final_sum[47]) begin
                     data_out <= 16'h0000; // ReLU: Negative result becomes 0
                 end else if (|final_sum[46:30]) begin 
-                    data_out <= 16'h7FFF; // Saturation: Overflow (>1.0) stays at max positive
+                    data_out <= 16'h7FFF; // Saturation: Value >= 1.0 clamped to max positive
                 end else begin
                     // Extract fractional bits [29:15] for Q1.15 output
                     data_out <= {1'b0, final_sum[29:15]};
                 end
                 
+                $display("[%0t] NEURON DEBUG: Finished %0d inputs. Result: %h", $time, NUM_INPUTS, data_out);
                 out_valid <= 1;
                 count <= 0;
                 accumulator <= 0;
