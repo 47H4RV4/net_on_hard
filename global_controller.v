@@ -48,8 +48,6 @@ module global_controller (
                     l1_run <= 1;
                     if (current_addr < 783) 
                         current_addr <= current_addr + 1;
-                    
-                    if (current_addr > 0 && current_addr % 200 == 0)
                         $display("[%0t] CTRL: Layer 1 Processing Pixel %0d", $time, current_addr);
 
                     if (l1_done) begin
@@ -64,7 +62,8 @@ module global_controller (
                     l2_run <= 1;
                     if (current_addr < 127) 
                         current_addr <= current_addr + 1;
-                    
+                        $display("[%0t] CTRL: Layer 2 Processing Neuron %0d", $time, current_addr);
+
                     if (l2_done) begin
                         $display("[%0t] CTRL: Layer 2 DONE -> Switching to Layer 3", $time);
                         state <= LAYER3;
@@ -77,7 +76,8 @@ module global_controller (
                     l3_run <= 1;
                     if (current_addr < 31) 
                         current_addr <= current_addr + 1;
-                    
+                        $display("[%0t] CTRL: Layer 3 Processing Neuron %0d", $time, current_addr);
+
                     if (l3_done) begin
                         $display("[%0t] CTRL: Layer 3 DONE -> Inference Complete", $time);
                         state <= DONE;

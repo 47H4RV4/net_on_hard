@@ -63,7 +63,13 @@ module nn_layer #(
 
             // 4. Pack the 16-bit output into the wide layer bus
             assign layer_out[i*DATA_WIDTH +: DATA_WIDTH] = n_out;
+            always @(posedge clk) begin
+                // Only print when the layer is actively processing input
+                if (input_valid) begin
+                    $display("[%0t] [Neuron %d] n_out=%b, weight_in=%b, bias_in=%d", 
+                             $time, i, n_out, w_wire, b_wire);
+                end
+            end
         end
     endgenerate
-
 endmodule
