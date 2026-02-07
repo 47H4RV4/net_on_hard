@@ -4,11 +4,11 @@ module mnist_top (
     input clk,
     input rst,
     input start,
-    output [10*16-1:0] digit_scores, // 160-bit bus for all 10 digits
+    output [10*16-1:0] digit_scores, // Corrected: Match the testbench port name
     output done
 );
 
-    // --- 1. Signal Declarations ---
+    // --- Signal Declarations ---
     wire [31:0] internal_addr; 
     wire l1_run, l2_run, l3_run;
     wire [127:0] l1_valids;
@@ -21,7 +21,7 @@ module mnist_top (
     wire [10*16-1:0] sm_bus;
     wire sm_done;
 
-    // --- 2. Global Controller ---
+    // --- Global Controller ---
     global_controller ctrl (
         .clk(clk), .rst(rst), .start_network(start),
         .l1_done(l1_valids[0]), .l2_done(l2_valids[0]), .l3_done(l3_valids[0]),
@@ -29,10 +29,10 @@ module mnist_top (
         .network_ready() 
     );
 
-    // --- 3. Memory & Layers ---
+    // --- Image Memory ---
     image_rom img (.clk(clk), .addr(internal_addr[9:0]), .q(rom_pixel));
 
-    // Scaling: SHIFT(19) for L1 (784 inputs), SHIFT(17) for L2 (128 inputs)
+    // --- Neural Layers (Scaling applied for stability) ---
     nn_layer #(.NUM_INPUTS(784), .NUM_NEURONS(128), .SHIFT(19), 
                .WEIGHT_FILE("layer_1_weights.mif"), .BIAS_FILE("layer_1_biases.mif")) L1 (
         .clk(clk), .rst(rst), .data_in(rom_pixel), .input_valid(l1_run), 
@@ -51,15 +51,14 @@ module mnist_top (
         .local_addr(internal_addr), .out_valids(l3_valids), .layer_out(l3_bus)
     );
 
-    // --- 4. Softmax Unit (Taylor Series Reference) ---
-    //
+    // --- Softmax Unit (Brings all scores to probabilities) ---
     softmax_unit sm (
         .clk(clk), .rst(rst), .neuron_outputs(l3_bus), 
         .in_valid(l3_valids[0]), .softmax_out(sm_bus), .out_valid(sm_done)
     );
 
-    // --- 5. Simplified Outputs ---
-    // Directly output the 10 probabilities/logits to the testbench
+    // --- Connections to Testbench ---
+    // digit_scores now provides all 10 results for Argmax to be done in TB
     assign digit_scores = sm_bus;
     assign done = sm_done;
 
