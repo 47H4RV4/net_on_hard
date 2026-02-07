@@ -4,7 +4,7 @@ module neuron #(
     parameter IN_WIDTH = 16,
     parameter OUT_WIDTH = 16,
     parameter NUM_INPUTS = 784,
-    parameter OUT_SHIFT = 15 // Controls the bit-extraction range
+    parameter OUT_SHIFT = 15 // Standard extraction for Q1.15
 )(
     input clk,
     input rst,
@@ -36,28 +36,28 @@ module neuron #(
                 count <= count + 1;
                 out_valid <= 0;
 
-                // --- VERBOSE STATE DISPLAY (Every 100th pixel to prevent log bloat) ---
-                if (count % 100 == 0) begin
-                    $display("[%0t] NEURON STEP %0d: In=%h | W=%h | Prod=%h | Acc=%h", 
-                             $time, count, data_in, weight_in, product, accumulator);
+                // Debug: Periodic progress tracking
+                if (count % 200 == 0) begin
+                    $display("[%0t] NEURON STEP %0d: In=%h | W=%h | Acc=%h", 
+                             $time, count, data_in, weight_in, accumulator);
                 end
 
             end else begin
-                // Final sum calculation with bias alignment
+                // Align Q1.15 bias with Q30 sum of products
                 final_sum = accumulator + $signed(product) + {{17{bias_in[15]}}, bias_in, 15'b0};
                 
-                // ReLU + Saturation Logic with State Reporting
+                // ReLU + Saturation Logic
                 if (final_sum[47]) begin
                     data_out <= 16'h0000; // ReLU
-                    $display("[%0t] NEURON RESULT: Negative Sum (%h) -> Output 0000", $time, final_sum);
+                    $display("[%0t] NEURON FINISH: Negative Sum (%h) -> Output 0000", $time, final_sum);
                 end else begin
-                    // Extract based on the OUT_SHIFT range
+                    // extraction range check
                     if (|final_sum[46 : OUT_SHIFT+15]) begin
                         data_out <= 16'h7FFF; // Saturate
-                        $display("[%0t] NEURON RESULT: OVERFLOW (%h) -> Saturated to 7FFF", $time, final_sum);
+                        $display("[%0t] NEURON FINISH: OVERFLOW (%h) -> Saturated to 7FFF", $time, final_sum);
                     end else begin
                         data_out <= {1'b0, final_sum[(OUT_SHIFT+14) : OUT_SHIFT]};
-                        $display("[%0t] NEURON RESULT: SUCCESS | Sum=%h | Output=%h", $time, final_sum, data_out);
+                        $display("[%0t] NEURON FINISH: SUCCESS | Sum=%h | Output=%h", $time, final_sum, data_out);
                     end
                 end
                 
