@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 module softmax_unit (
-    input clk,
+    input clk, 
     input rst,
     input [10*16-1:0] neuron_outputs,
     input in_valid,
@@ -9,85 +9,86 @@ module softmax_unit (
     output reg out_valid
 );
 
-    // --- State Definitions (Derived from maomran reference) ---
-    //
-    localparam IDLE   = 3'b000;
-    localparam MAX    = 3'b001; // Stabilizer (Essential for Fixed-Point)
-    localparam EXP    = 3'b010; // Taylor Series e^x
-    localparam SUM    = 3'b011; // Summation of Exponents
-    localparam DIV    = 3'b100; // Normalization (Division)
-    localparam DONE   = 3'b101;
-
+    // State definitions
+    localparam IDLE = 0, MAX = 1, EXP = 2, SUM = 3, DIV = 4, DONE = 5;
+    
     reg [2:0] state;
     reg [3:0] count;
-    reg [15:0] max_logit;
-    reg [15:0] stabilized_logits [0:9];
-    reg [15:0] exponents [0:9];
-    reg [31:0] sum_exponents; // Q16.16 to prevent overflow
-    
-    // Fixed-Point Taylor Series math: e^x approx 1 + x + x^2/2
-    wire [31:0] x_sq = ($signed(stabilized_logits[count]) * $signed(stabilized_logits[count]));
-    wire [15:0] x_sq_over_2 = x_sq[30:16]; // Correctly shift for x^2 / 2
+    reg signed [15:0] max_logit;
+    reg [15:0] exps [0:9];
+    reg [31:0] total_sum;
+
+    // --- FIX: Declare temporary variables as registers at the module level ---
+    reg signed [15:0] x_calc;
+    reg signed [31:0] x_sq_calc;
 
     always @(posedge clk) begin
         if (rst) begin
-            state <= IDLE; out_valid <= 0; sum_exponents <= 0;
+            state <= IDLE; 
+            out_valid <= 0;
+            count <= 0;
+            max_logit <= 16'h8001;
+            total_sum <= 0;
+            x_calc <= 0;
+            x_sq_calc <= 0;
         end else begin
             case (state)
-                IDLE: if (in_valid) begin
-                    state <= MAX;
-                    count <= 0;
-                    max_logit <= 16'h8000; // Most negative
+                IDLE: begin
+                    out_valid <= 0;
+                    if (in_valid) begin 
+                        state <= MAX; 
+                        count <= 0; 
+                        max_logit <= 16'h8001; 
+                    end
                 end
-
-                // Step 1: Find Max (Reference Stability Trick)
-                MAX: begin
+                
+                MAX: begin // Find Max Logit for mathematical stability
                     if (count < 10) begin
-                        if ($signed(neuron_outputs[count*16 +: 16]) > $signed(max_logit))
+                        if ($signed(neuron_outputs[count*16 +: 16]) > max_logit)
                             max_logit <= neuron_outputs[count*16 +: 16];
                         count <= count + 1;
                     end else begin
-                        state <= EXP;
-                        count <= 0;
-                    end
-                end
-
-                // Step 2: Exponential (Taylor Series reference)
-                EXP: begin
-                    if (count < 10) begin
-                        // Stabilize x_i = (logit - max). Ensures result is always <= 0.
-                        // exp(negative) is always 0.0 to 1.0, which fits in Q1.15.
-                        stabilized_logits[count] <= neuron_outputs[count*16 +: 16] - max_logit;
-                        
-                        // Taylor Series: 1 + x + x^2/2
-                        // Q1.15 representation of '1' is 7FFF.
-                        exponents[count] <= 16'h7FFF + stabilized_logits[count] + x_sq_over_2;
-                        
-                        count <= count + 1;
                         state <= EXP; 
-                    end else begin
-                        state <= SUM;
                         count <= 0;
-                        sum_exponents <= 0;
                     end
                 end
 
-                // Step 3: Sequential Addition
-                SUM: begin
+                EXP: begin // Taylor Series Expansion: 1 + x + x^2/2
                     if (count < 10) begin
-                        sum_exponents <= sum_exponents + exponents[count];
+                        // FIX: Perform calculations using the pre-declared registers
+                        x_calc = $signed(neuron_outputs[count*16 +: 16]) - max_logit;
+                        x_sq_calc = x_calc * x_calc;
+                        
+                        // Q1.15 math: 1.0 (approx 7FFF) + x + (x^2 / 2)
+                        // x_sq is Q2.30, so x_sq[30:16] aligns it to Q15 range
+                        exps[count] <= 16'h7FFF + x_calc + x_sq_calc[30:16];
+                        
                         count <= count + 1;
                     end else begin
-                        state <= DIV;
+                        state <= SUM; 
+                        count <= 0; 
+                        total_sum <= 0;
+                    end
+                end
+
+                SUM: begin // Accumulate total of exponents
+                    if (count < 10) begin
+                        total_sum <= total_sum + exps[count];
+                        count <= count + 1;
+                    end else begin
+                        state <= DIV; 
                         count <= 0;
                     end
                 end
 
-                // Step 4: Normalization (Division)
-                DIV: begin
+                DIV: begin // Normalize probabilities
                     if (count < 10) begin
-                        // Q1.15 Division: (Exp * 2^15) / Sum
-                        softmax_out[count*16 +: 16] <= (exponents[count] << 15) / sum_exponents[15:0];
+                        // Fixed-point division: (Exp * 2^15) / TotalSum
+                        if (total_sum[15:0] != 0)
+                            softmax_out[count*16 +: 16] <= (exps[count] << 15) / total_sum[15:0];
+                        else
+                            softmax_out[count*16 +: 16] <= 16'h0000;
+                            
                         count <= count + 1;
                     end else begin
                         state <= DONE;
@@ -95,9 +96,11 @@ module softmax_unit (
                 end
 
                 DONE: begin
-                    out_valid <= 1;
+                    out_valid <= 1; // Pulse high for one cycle
                     state <= IDLE;
                 end
+                
+                default: state <= IDLE;
             endcase
         end
     end
