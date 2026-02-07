@@ -15,11 +15,13 @@ module neuron #(
     output reg out_valid
 );
 
-    reg signed [31:0] accumulator;
+    // 48-bit accumulator prevents overflow for 784 Q2.30 products
+    reg signed [47:0] accumulator;
     reg [31:0] count;
     wire signed [31:0] product;
-    reg signed [31:0] final_sum;
+    reg signed [47:0] final_sum;
 
+    // Q1.15 * Q1.15 = Q2.30 result
     assign product = $signed(data_in) * $signed(weight_in);
 
     always @(posedge clk) begin
@@ -30,24 +32,23 @@ module neuron #(
             data_out <= 0;
         end else if (input_valid) begin
             if (count < NUM_INPUTS - 1) begin
-                accumulator <= accumulator + product;
+                accumulator <= accumulator + $signed(product);
                 count <= count + 1;
                 out_valid <= 0;
             end else begin
-                // Calculate final sum including bias
-                final_sum = accumulator + product + ($signed(bias_in) << 15);
+                // Align Q1.15 bias with Q30 sum of products by shifting left 15 bits
+                final_sum = accumulator + $signed(product) + {{17{bias_in[15]}}, bias_in, 15'b0};
                 
-                // --- THE FIX: RELU + SATURATION ---
-                if (final_sum <= 0) begin
-                    data_out <= 0; // ReLU
-                end else if (final_sum[31:30] != 2'b00) begin
-                    // Overflow occurred (value > 1.0)
-                    data_out <= 16'h7FFF; // Saturate to max positive Q1.15
+                // ReLU + Saturation Logic to prevent wrap-around
+                if (final_sum[47]) begin
+                    data_out <= 16'h0000; // ReLU: Negative result becomes 0
+                end else if (|final_sum[46:30]) begin 
+                    data_out <= 16'h7FFF; // Saturation: Overflow (>1.0) stays at max positive
                 end else begin
-                    data_out <= final_sum[30:15]; // Normal positive value
+                    // Extract fractional bits [29:15] for Q1.15 output
+                    data_out <= {1'b0, final_sum[29:15]};
                 end
                 
-                $display("[%0t] NEURON DEBUG: Finished %0d inputs. Result: %h", $time, NUM_INPUTS, data_out);
                 out_valid <= 1;
                 count <= 0;
                 accumulator <= 0;

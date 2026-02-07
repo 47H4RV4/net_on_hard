@@ -8,7 +8,6 @@ module mnist_top (
     output done
 );
 
-    // --- 1. Signal Declarations ---
     wire [31:0] internal_addr; 
     wire l1_run, l2_run, l3_run;
     wire [127:0] l1_valids;
@@ -20,9 +19,11 @@ module mnist_top (
     wire [15:0] rom_pixel;
     wire [10*16-1:0] sm_bus;
     wire sm_done;
-    reg prediction_done; // To synchronize the final output
+    
+    // Handshake signals for final output stability
+    reg prediction_done;
+    reg search_active;
 
-    // --- 2. Global Controller ---
     global_controller ctrl (
         .clk(clk), .rst(rst), .start_network(start),
         .l1_done(l1_valids[0]), 
@@ -30,10 +31,9 @@ module mnist_top (
         .l3_done(l3_valids[0]),
         .current_addr(internal_addr), 
         .l1_run(l1_run), .l2_run(l2_run), .l3_run(l3_run),
-        .network_ready() // We will use prediction_done for the top-level 'done'
+        .network_ready() 
     );
 
-    // --- 3. Memory & Layers ---
     image_rom img (.clk(clk), .addr(internal_addr[9:0]), .q(rom_pixel));
 
     nn_layer #(.NUM_INPUTS(784), .NUM_NEURONS(128), 
@@ -56,13 +56,9 @@ module mnist_top (
         .local_addr(internal_addr), .out_valids(l3_valids), .layer_out(l3_bus)
     );
 
-    // --- 4. Softmax Unit ---
-    softmax_unit sm (
-        .clk(clk), .rst(rst), .neuron_outputs(l3_bus), 
-        .in_valid(l3_valids[0]), .softmax_out(sm_bus), .out_valid(sm_done)
-    );
+    softmax_unit sm (.clk(clk), .rst(rst), .neuron_outputs(l3_bus), 
+                    .in_valid(l3_valids[0]), .softmax_out(sm_bus), .out_valid(sm_done));
 
-    // --- 5. Argmax (Prediction) Logic ---
     integer k;
     reg [15:0] max_val;
     
@@ -71,23 +67,25 @@ module mnist_top (
             final_prediction <= 0;
             max_val <= 0;
             prediction_done <= 0;
+            search_active <= 0;
         end else if (sm_done) begin
-            // Reset max_val for a new search
+            search_active <= 1; // Start search search cycle
+        end else if (search_active) begin
             max_val = 0;
             for (k = 0; k < 10; k = k + 1) begin
-                // UNSIGNED comparison: high probabilities (MSB=1) are the largest
+                // Compare probabilities as unsigned magnitudes
                 if (sm_bus[k*16 +: 16] > max_val) begin
                     max_val = sm_bus[k*16 +: 16];
                     final_prediction <= k;
                 end
             end
-            prediction_done <= 1; // Signal that Argmax is complete
+            prediction_done <= 1;
+            search_active <= 0;
         end else begin
             prediction_done <= 0;
         end
     end
 
-    // The top-level 'done' signal now accurately reflects when the result is ready
     assign done = prediction_done;
 
 endmodule
