@@ -5,15 +5,27 @@ module mnist_tb;
     reg clk;
     reg rst;
     reg start;
-    wire [15:0] final_prediction;
+    
+    // Port matching for the updated mnist_top (No final_prediction)
+    wire [159:0] scores; 
     wire done;
 
     mnist_top uut (
-        .clk(clk), .rst(rst), .start(start), 
-        .final_prediction(final_prediction), .done(done)
+        .clk(clk), 
+        .rst(rst), 
+        .start(start), 
+        .digit_scores(scores), 
+        .done(done)
     );
 
+    // Clock Generation
     always #5 clk = ~clk;
+
+    // Simulation Variables for Testbench-Side Argmax
+    integer i;
+    reg [15:0] max_score;
+    integer predicted_digit;
+    reg [15:0] current_score;
 
     initial begin
         clk = 0;
@@ -23,50 +35,68 @@ module mnist_tb;
         $dumpfile("mnist_signals.vcd");
         $dumpvars(0, mnist_tb);
 
-        $display("Starting Neural Network Inference...");
-        $display("--------------------------------------");
+        $display("Starting Neural Network Inference (Argmax-in-TB Mode)...");
+        $display("---------------------------------------------------------");
 
+        // Global Reset
         repeat(10) @(posedge clk);
         rst = 0;
         $display("[%0t] TB: Global Reset released.", $time);
 
         repeat(5) @(posedge clk);
         
-        // --- WIDER START PULSE ---
+        // Start Signal Pulse
         $display("[%0t] TB: Asserting Start Signal...", $time);
         start = 1;
-        @(posedge clk); // Hold for cycle 1
-        @(posedge clk); // Hold for cycle 2
+        repeat(2) @(posedge clk); 
         start = 0;
-        $display("[%0t] TB: Start Signal Released.", $time);
+        $display("[%0t] TB: Start Signal Released. Waiting for layers...", $time);
 
         fork
             begin
+                // --- ARGMAS CALCULATION IN TESTBENCH ---
                 wait(done);
-                $display("--------------------------------------");
+                $display("---------------------------------------------------------");
                 $display("[%0t] TB: SUCCESS - Done signal received!", $time);
-                $display("Predicted Digit: %0d", final_prediction[3:0]);
-                $display("--------------------------------------");
+                $display("Analyzing Final Digit Scores:");
+                
+                max_score = 16'h0000;
+                predicted_digit = 0;
+                
+                for (i = 0; i < 10; i = i + 1) begin
+                    current_score = scores[i*16 +: 16];
+                    $display("  Digit %0d Score: %h", i, current_score);
+                    
+                    // Unsigned magnitude comparison
+                    if (current_score >= max_score) begin
+                        max_score = current_score;
+                        predicted_digit = i;
+                    end
+                end
+                
+                $display("---------------------------------------------------------");
+                $display(">>> FINAL PREDICTED DIGIT: %0d <<<", predicted_digit);
+                $display("---------------------------------------------------------");
+                #100;
+                $finish;
             end
             
             begin : heartbeat_monitor
                 forever begin
-                    #1000000; 
+                    #1000000; // 1ms intervals
                     if (!done)
-                        $display("[%0t] TB: Simulation ongoing... (Waiting for Layers)", $time);
+                        $display("[%0t] TB: Simulation ongoing... (Processing Neurons)", $time);
                     else
                         disable heartbeat_monitor;
                 end
             end
 
             begin
-                #20000000; // 20ms Timeout
+                #20000000; // 20ms Safety Timeout
                 $display("[%0t] FATAL ERROR: Simulation Timed Out!", $time);
                 $finish;
             end
         join_any
 
-        #100;
-        $finish;
     end
 endmodule
