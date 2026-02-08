@@ -35,16 +35,19 @@ module softmax_unit (
                     end else begin state <= EXP; count <= 0; end
                 end
 
-                EXP: begin // Q8.8 Taylor Series
+                EXP: begin // Taylor Series: e^x approx 1 + x + x^2/2
                     if (count < 10) begin
                         x_calc = $signed(neuron_outputs[count*16 +: 16]) - max_logit;
-                        x_sq_calc = x_calc * x_calc; 
+                        x_sq_calc = x_calc * x_calc; // Q8.8 * Q8.8 = Q16.16
                         
-                        // FIX: Change 16'h7FFF (Q1.15) to 16'h0100 (Q8.8)
-                        // x_sq_calc is Q16.16. Shift right by 9 to get Q8.8 and divide by 2.
+                        // FIX: 1.0 in Q8.8 is 0x0100. 
+                        // To get x^2/2 in Q8.8: (x_sq_calc is Q16.16) >> 9 
+                        // (Shift 8 for Q8.8 alignment + Shift 1 for division by 2)
                         exps[count] <= 16'h0100 + x_calc + (x_sq_calc >>> 9);
                         count <= count + 1;
-                    end else begin state <= SUM; count <= 0; total_sum <= 0; end
+                    end else begin
+                        state <= SUM; count <= 0; total_sum <= 0;
+                    end
                 end
 
                 SUM: begin 
@@ -56,9 +59,10 @@ module softmax_unit (
 
                 DIV: begin // Normalization
                     if (count < 10) begin
-                        // FIX: Shift left by 8 (not 15) to maintain Q8.8 output
-                        if (total_sum[15:0] != 0)
-                            softmax_out[count*16 +: 16] <= (exps[count] << 8) / total_sum[15:0];
+                        // FIX: Use full 32-bit total_sum to avoid truncation/sign errors
+                        // Shift left by 8 for Q8.8 result
+                        if (total_sum != 0)
+                            softmax_out[count*16 +: 16] <= (exps[count] << 8) / total_sum;
                         else
                             softmax_out[count*16 +: 16] <= 16'h0000;
                         count <= count + 1;
