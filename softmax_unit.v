@@ -22,9 +22,12 @@ module softmax_unit (
             state <= IDLE; out_valid <= 0;
         end else begin
             case (state)
-                IDLE: if (in_valid) begin state <= MAX; count <= 0; max_logit <= 16'h8001; end
+                IDLE: begin
+                    out_valid <= 0;
+                    if (in_valid) begin state <= MAX; count <= 0; max_logit <= 16'h8001; end
+                end
                 
-                MAX: begin // Stability step: ensures exp input <= 0
+                MAX: begin // Find Max for stability (Q8.8)
                     if (count < 10) begin
                         if ($signed(neuron_outputs[count*16 +: 16]) > max_logit)
                             max_logit <= neuron_outputs[count*16 +: 16];
@@ -38,8 +41,8 @@ module softmax_unit (
                         x_sq_calc = x_calc * x_calc; // Q8.8 * Q8.8 = Q16.16
                         
                         // Q8.8 math: 1.0 (0100) + x + (x_sq / 512)
-                        // x_sq_calc is Q16.16; shifting right by 9 scales it for Q8.8 range
-                        exps[count] <= 16'h0100 + x_calc + (x_sq_calc >> 9);
+                        // x_sq_calc is Q16.16; shifting by 9 scales to Q8.8 and divides by 2
+                        exps[count] <= 16'h0100 + x_calc + (x_sq_calc >>> 9);
                         count <= count + 1;
                     end else begin state <= SUM; count <= 0; total_sum <= 0; end
                 end
@@ -51,7 +54,7 @@ module softmax_unit (
                     end else begin state <= DIV; count <= 0; end
                 end
 
-                DIV: begin // Normalization for Q8.8
+                DIV: begin // Normalize for Q8.8 output
                     if (count < 10) begin
                         // Shift left by 8 to maintain Q8.8 precision during division
                         if (total_sum[15:0] != 0)

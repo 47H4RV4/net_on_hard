@@ -49,11 +49,11 @@ module mnist_tb;
                 $display("Analyzing Q8.8 Final Scores (Hex):");
                 
                 max_score = 16'h0000;
-                predicted_digit = 0;
+                predicted_digit = 9;
                 
-                for (i = 0; i < 10; i = i + 1) begin
+                for (i = 9; i >= 0; i = i - 1) begin
                     current_score = scores[i*16 +: 16];
-                    $display("  Digit %0d Score: %h", i, current_score);
+                    $display("  Digit %0d Score: decimal -> %d hexal -> %h", i, current_score,current_score);
                     
                     // Comparison to find the highest probability
                     if (current_score >= max_score) begin
@@ -65,6 +65,7 @@ module mnist_tb;
                 $display("---------------------------------------------------------");
                 $display(">>> FINAL PREDICTED DIGIT: %0d <<<", predicted_digit);
                 $display("---------------------------------------------------------");
+                $display("All scores in binary -> %b",scores);
                 #100;
                 $finish;
             end
