@@ -4,7 +4,7 @@ module neuron #(
     parameter IN_WIDTH = 16,
     parameter OUT_WIDTH = 16,
     parameter NUM_INPUTS = 784,
-    parameter OUT_SHIFT = 22 // High-precision extraction point (e.g., 22 for Q30->Q8.8)
+    parameter OUT_SHIFT = 15 // High-precision extraction point (e.g., 22 for Q30->Q8.8)
 )(
     input clk,
     input rst,

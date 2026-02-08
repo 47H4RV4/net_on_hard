@@ -49,9 +49,9 @@ module mnist_tb;
                 $display("Analyzing Q8.8 Final Scores (Hex):");
                 
                 max_score = 16'h0000;
-                predicted_digit = 9;
+                predicted_digit = 0;
                 
-                for (i = 9; i >= 0; i = i - 1) begin
+                for (i = 0; i < 10; i = i + 1) begin
                     current_score = scores[i*16 +: 16];
                     $display("  Digit %0d Score: decimal -> %d hexal -> %h", i, current_score,current_score);
                     
