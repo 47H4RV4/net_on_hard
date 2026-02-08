@@ -1,23 +1,20 @@
 `timescale 1ns / 1ps
 
-module image_rom #(
-    parameter ADDR_WIDTH = 10, // 2^10 = 1024, enough for 784 pixels
-    parameter DATA_WIDTH = 16  // Kept at 16-bit width
-)(
+module image_rom (
     input clk,
-    input [ADDR_WIDTH-1:0] addr,
-    output reg [DATA_WIDTH-1:0] q
+    input [9:0] addr,
+    output reg [3:0] q // 4-bit Int4 data
 );
 
-    // Memory array is 16 bits wide to accommodate the 16-bit MIF data
-    reg [DATA_WIDTH-1:0] rom [0:783];
+    reg [3:0] rom [0:783];
 
     initial begin
-        // Loads the 16-bit scaled MIF file
+        // Loads the 4-bit MIF prepared by updated model.py
         $readmemb("mnist_sample.mif", rom);
     end
 
     always @(posedge clk) begin
         q <= rom[addr];
     end
+
 endmodule

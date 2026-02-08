@@ -1,49 +1,58 @@
 `timescale 1ns / 1ps
 
 module neuron #(
-    parameter IN_WIDTH = 16,
+    parameter IN_WIDTH = 4,      // Int4 quantization
     parameter NUM_INPUTS = 784,
-    parameter SHIFT = 8 
+    parameter SHIFT = 6          // Normalization shift factor
 )(
-    input clk, rst,
-    input [IN_WIDTH-1:0] data_in,
-    input [IN_WIDTH-1:0] weight_in,
-    input [IN_WIDTH-1:0] bias_in,
+    input clk,
+    input rst,
+    input [IN_WIDTH-1:0] data_in,   // Unsigned 4-bit activation
+    input [IN_WIDTH-1:0] weight_in, // Signed 4-bit weight
     input input_valid,
-    output reg [15:0] data_out,
+    output reg [3:0] data_out,      // Unsigned 4-bit activation out
     output reg out_valid
 );
 
-    reg signed [47:0] accumulator;
+    // 20-bit signed accumulator to prevent overflow
+    reg signed [19:0] accumulator;
     reg [31:0] count;
-    reg signed [47:0] final_sum;
 
-    wire signed [15:0] s_data   = {{5{data_in[11]}}, data_in[10:0]};
-    wire signed [15:0] s_weight = {{5{weight_in[11]}}, weight_in[10:0]};
-    wire signed [15:0] s_bias   = {{5{bias_in[11]}}, bias_in[10:0]};
-    wire signed [31:0] product  = s_data * s_weight;
+    // Mixed-sign multiplication: unsigned input treated as positive signed * signed weight
+    //
+    wire signed [19:0] product = $signed({1'b0, data_in}) * $signed(weight_in);
 
     always @(posedge clk) begin
         if (rst) begin
-            accumulator <= 0; count <= 0; out_valid <= 0; data_out <= 0;
-            $display("[%0t] NEURON DEBUG: Reset triggered.", $time); //
+            accumulator <= 0;
+            count <= 0;
+            out_valid <= 0;
+            data_out <= 0;
         end else if (input_valid) begin
             if (count < NUM_INPUTS - 1) begin
-                accumulator <= accumulator + $signed(product);
+                accumulator <= accumulator + product;
                 count <= count + 1;
                 out_valid <= 0;
-                $display("[%0t] NEURON STEP %0d: In=%h | W=%h | Prod=%h | Acc=%h", $time, count, data_in, weight_in, product, accumulator);
             end else begin
-                final_sum = accumulator + $signed(product) + ($signed(s_bias) << 8);
-                
-                // Extraction and Masking only; ReLU logic removed
-                data_out <= (final_sum >>> SHIFT) & 16'h0FF0; 
-                
+                // 1. Final Accumulation
+                // 2. Normalization: Arithmetic shift right by SHIFT
+                // 3. ReLU + Clipping: Keep result in [0, 15] range
+                reg signed [19:0] normalized_sum;
+                normalized_sum = (accumulator + product) >>> SHIFT;
+
+                if (normalized_sum < 0) 
+                    data_out <= 4'd0;       // ReLU
+                else if (normalized_sum > 15) 
+                    data_out <= 4'd15;      // Positive Saturation
+                else 
+                    data_out <= normalized_sum[3:0];
+
                 out_valid <= 1;
                 count <= 0;
                 accumulator <= 0;
-                $display("[%0t] NEURON RESULT: SUCCESS | Sum=%h | Packed Out=%h", $time, final_sum, (final_sum >>> SHIFT) & 16'h0FF0);
             end
-        end else out_valid <= 0;
+        end else begin
+            out_valid <= 0;
+        end
     end
 endmodule

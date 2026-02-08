@@ -4,65 +4,54 @@ module mnist_top (
     input clk,
     input rst,
     input start,
-    output [10*16-1:0] digit_scores, // 160-bit bus for Q4.4 packed results
+    output [3:0] predicted_class,
     output done
 );
 
-    // --- Signal Declarations ---
-    wire [31:0] internal_addr; 
+    wire [31:0] internal_addr;
     wire l1_run, l2_run, l3_run;
-    wire [127:0] l1_valids; 
-    wire [31:0] l2_valids; 
-    wire [9:0] l3_valids;
-    wire [128*16-1:0] l1_bus; 
-    wire [32*16-1:0] l2_bus; 
-    wire [10*16-1:0] l3_bus;
-    wire [15:0] rom_pixel; // 16-bit width maintained per your requirement
-    wire [159:0] sm_bus;
-    wire sm_done;
+    wire [127:0] l1_valids; wire [31:0] l2_valids; wire [9:0] l3_valids;
+    wire [128*4-1:0] l1_bus; wire [32*4-1:0] l2_bus; wire [10*4-1:0] l3_bus;
+    wire [3:0] rom_pixel;
+    wire am_done;
 
-    // --- Global Controller ---
     global_controller ctrl (
         .clk(clk), .rst(rst), .start_network(start),
         .l1_done(l1_valids[0]), .l2_done(l2_valids[0]), .l3_done(l3_valids[0]),
         .current_addr(internal_addr), .l1_run(l1_run), .l2_run(l2_run), .l3_run(l3_run),
-        .network_ready() 
+        .network_ready()
     );
 
-    // Image ROM provides packed 0000siii.ffff0000 data
+    // Int4 Image ROM
     image_rom img (.clk(clk), .addr(internal_addr[9:0]), .q(rom_pixel));
 
-    // --- Neural Layers (Q4.4 Packed Pipeline) ---
-    
-    // LAYER 1: 784 -> 128 Neurons. SHIFT(8) extracts siii.ffff from the binary point at bit 8.
-    nn_layer #(.NUM_INPUTS(784), .NUM_NEURONS(128), .SHIFT(8), 
-               .WEIGHT_FILE("layer_1_weights.mif"), .BIAS_FILE("layer_1_biases.mif")) L1 (
-        .clk(clk), .rst(rst), .data_in(rom_pixel), .input_valid(l1_run), 
+    // Layer 1: 784 -> 128 (Int4)
+    nn_layer #(.NUM_INPUTS(784), .NUM_NEURONS(128), .SHIFT(6), 
+               .WEIGHT_FILE("layer_1_weights.mif")) L1 (
+        .clk(clk), .rst(rst), .data_in(rom_pixel), .input_valid(l1_run),
         .local_addr(internal_addr), .out_valids(l1_valids), .layer_out(l1_bus)
     );
 
-    // LAYER 2: 128 -> 32 Neurons. SHIFT(8) maintains the Si.F alignment.
-    nn_layer #(.NUM_INPUTS(128), .NUM_NEURONS(32), .SHIFT(8), 
-               .WEIGHT_FILE("layer_2_weights.mif"), .BIAS_FILE("layer_2_biases.mif")) L2 (
-        .clk(clk), .rst(rst), .data_in(l1_bus[internal_addr[6:0]*16 +: 16]), .input_valid(l2_run), 
+    // Layer 2: 128 -> 32 (Int4)
+    nn_layer #(.NUM_INPUTS(128), .NUM_NEURONS(32), .SHIFT(6), 
+               .WEIGHT_FILE("layer_2_weights.mif")) L2 (
+        .clk(clk), .rst(rst), .data_in(l1_bus[internal_addr[6:0]*4 +: 4]), .input_valid(l2_run),
         .local_addr(internal_addr), .out_valids(l2_valids), .layer_out(l2_bus)
     );
 
-    // LAYER 3: 32 -> 10 Neurons. SHIFT(8) extracts the final logits for Softmax.
-    nn_layer #(.NUM_INPUTS(32), .NUM_NEURONS(10), .SHIFT(8), 
-               .WEIGHT_FILE("layer_3_weights.mif"), .BIAS_FILE("layer_3_biases.mif")) L3 (
-        .clk(clk), .rst(rst), .data_in(l2_bus[internal_addr[4:0]*16 +: 16]), .input_valid(l3_run), 
+    // Layer 3: 32 -> 10 (Int4 Logits)
+    nn_layer #(.NUM_INPUTS(32), .NUM_NEURONS(10), .SHIFT(6), 
+               .WEIGHT_FILE("layer_3_weights.mif")) L3 (
+        .clk(clk), .rst(rst), .data_in(l2_bus[internal_addr[4:0]*4 +: 4]), .input_valid(l3_run),
         .local_addr(internal_addr), .out_valids(l3_valids), .layer_out(l3_bus)
     );
 
-    // --- Softmax Unit (Q4.4 Aligned) ---
-    // Takes packed raw scores and produces packed probabilities
-    softmax_unit sm (
-        .clk(clk), .rst(rst), .neuron_outputs(l3_bus), 
-        .in_valid(l3_valids[0]), .softmax_out(sm_bus), .out_valid(sm_done)
+    // Argmax Unit replaces Softmax for hardware efficiency
+    argmax_unit am (
+        .clk(clk), .rst(rst), .in_valid(l3_valids[0]),
+        .neuron_outputs(l3_bus), .prediction(predicted_class), .out_valid(am_done)
     );
 
-    assign digit_scores = sm_bus;
-    assign done = sm_done;
+    assign done = am_done;
 
 endmodule
