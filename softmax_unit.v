@@ -27,7 +27,7 @@ module softmax_unit (
                     if (in_valid) begin state <= MAX; count <= 0; max_logit <= 16'h8001; end
                 end
                 
-                MAX: begin // Find Max for stability (Q8.8)
+                MAX: begin // Find Max (unchanged)
                     if (count < 10) begin
                         if ($signed(neuron_outputs[count*16 +: 16]) > max_logit)
                             max_logit <= neuron_outputs[count*16 +: 16];
@@ -35,13 +35,13 @@ module softmax_unit (
                     end else begin state <= EXP; count <= 0; end
                 end
 
-                EXP: begin // Q8.8 Taylor Series: 1.0 (0100) + x + x^2/2
+                EXP: begin // Q8.8 Taylor Series
                     if (count < 10) begin
                         x_calc = $signed(neuron_outputs[count*16 +: 16]) - max_logit;
-                        x_sq_calc = x_calc * x_calc; // Q8.8 * Q8.8 = Q16.16
+                        x_sq_calc = x_calc * x_calc; 
                         
-                        // Q8.8 math: 1.0 (0100) + x + (x_sq / 512)
-                        // x_sq_calc is Q16.16; shifting by 9 scales to Q8.8 and divides by 2
+                        // FIX: Change 16'h7FFF (Q1.15) to 16'h0100 (Q8.8)
+                        // x_sq_calc is Q16.16. Shift right by 9 to get Q8.8 and divide by 2.
                         exps[count] <= 16'h0100 + x_calc + (x_sq_calc >>> 9);
                         count <= count + 1;
                     end else begin state <= SUM; count <= 0; total_sum <= 0; end
@@ -54,9 +54,9 @@ module softmax_unit (
                     end else begin state <= DIV; count <= 0; end
                 end
 
-                DIV: begin // Normalize for Q8.8 output
+                DIV: begin // Normalization
                     if (count < 10) begin
-                        // Shift left by 8 to maintain Q8.8 precision during division
+                        // FIX: Shift left by 8 (not 15) to maintain Q8.8 output
                         if (total_sum[15:0] != 0)
                             softmax_out[count*16 +: 16] <= (exps[count] << 8) / total_sum[15:0];
                         else
